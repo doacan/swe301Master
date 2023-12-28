@@ -196,6 +196,111 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
 }
 
 void archiveFiles(struct CommandLineArguments* arguments) {
+    // Determine the output file name
+    const char* outputFileName = (arguments->oArgument != NULL) ? arguments->oArgument : "a.sau";
+    
+    // Open the output file for writing, create if not exists, truncate if exists
+    int outFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    
+    // Check if the output file was opened successfully
+    if (outFile == -1) {
+        perror("Error: Unable to create or open output file");
+        exit(1);
+    }
+
+    // Loop through each input file specified with -b argument
+    for (int i = 0; i < arguments->bArgumentCount; ++i) {
+        // Open the current input file for reading
+        int file = open(arguments->bArguments[i], O_RDONLY);
+
+        // Check if the input file was opened successfully
+        if (file != -1) {
+            // Initialize variables for character counting and text file determination
+            off_t charCount = 0;
+            char buffer[1];
+            ssize_t bytesRead;
+            int isTextFile = 1;  // Assume it's a text file initially
+            int nonPrintableCount = 0;  // Counter for non-printable ASCII characters
+
+            // Loop through the contents of the input file
+            while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+                charCount += bytesRead;
+
+                // Check if the current character is not a printable ASCII character or numeric digit
+                if ((buffer[0] < 32 || buffer[0] > 126) || (buffer[0] >= 48 && buffer[0] <= 57)) {
+                    nonPrintableCount++;
+
+                    // Calculate the tolerance as a percentage of non-printable characters
+                    double tolerancePercentage = (nonPrintableCount * 100.0) / (double)charCount;
+
+                    // If the tolerance exceeds a certain threshold, consider it not a text file
+                    if (tolerancePercentage > 80.0) {
+                        isTextFile = 0;  // Not a text file
+                        break;
+                    }
+                }
+            }
+
+            // Check if the input file is determined as a text file
+            if (!isTextFile) {
+                fprintf(stderr, "Error: %s input file format is incompatible!\n", arguments->bArguments[i]);
+                close(file);
+                close(outFile);
+                exit(1);
+            }
+
+            // Get file information and write to the output file
+            struct stat fileStat;
+            if (fstat(file, &fileStat) == 0) {
+                dprintf(outFile, "|%s,%o,%ld", arguments->bArguments[i], fileStat.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO), charCount);
+            }
+            else {
+                perror("Error: Unable to get file permissions");
+                exit(1);
+            }
+
+            // Close the input file
+            close(file);
+        }
+        else {
+            perror("Error: Unable to open file");
+            exit(1);
+        }
+    }
+
+    // Separate the file metadata from the file content in the output file
+    dprintf(outFile, "|");
+
+    // Transfer the content of each input file into 1 byte per character in 8-bit binary ASCII format and add to the output file
+    for (int i = 0; i < arguments->bArgumentCount; ++i) {
+        // Open the current input file for reading
+        int file = open(arguments->bArguments[i], O_RDONLY);
+
+        // Check if the input file was opened successfully
+        if (file != -1) {
+            char buffer[1];
+
+            // Loop through the contents of the input file
+            while (read(file, buffer, sizeof(buffer)) > 0) {
+                // Extract each bit of the byte and write it to the output file
+                for (int j = 7; j >= 0; --j) {
+                    int bit = ((buffer[0] >> j) & 1) + '0';
+                    write(outFile, &bit, 1);
+                }
+            }
+
+            // Close the input file
+            close(file);
+        }
+        else {
+            perror("Error: Unable to open file");
+        }
+    }
+
+    // Close the output file
+    close(outFile);
+}
+
     const char* outputFileName = (arguments->oArgument != NULL) ? arguments->oArgument: "a.sau";
     int outFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (outFile == -1) {

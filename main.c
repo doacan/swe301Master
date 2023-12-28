@@ -31,7 +31,6 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
 void archiveFiles(struct CommandLineArguments* arguments);
 
 
-
 int main(int argc, char* argv[]) {
     struct CommandLineArguments arguments;
     arguments.bArguments = NULL;
@@ -49,12 +48,15 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
         archiveFiles(&arguments);
-        printf("The files have been merged.");
-    } else if (arguments.aArguments != NULL) {
+        printf("The files have been merged.\n");
+    }
+    else if (arguments.aArguments != NULL) {
         openFiles(&arguments);
-    } else if (arguments.oArgument != NULL && arguments.bArguments == NULL) {
+    }
+    else if (arguments.oArgument != NULL && arguments.bArguments == NULL) {
         perror("Error: -o argument cannot be used by itself");
-    } else {
+    }
+    else {
         perror("Error: _name -o output file name OR -a input_file output_folder\");");
     }
 
@@ -71,7 +73,8 @@ long getTotalSize(struct CommandLineArguments* arguments) {
         struct stat fileStat;
         if (stat(arguments->bArguments[i], &fileStat) == 0) {
             totalSize += fileStat.st_size;
-        } else {
+        }
+        else {
             fprintf(stderr, "Error: Unable to get file size for %s\n", arguments->bArguments[i]);
             freeCommandLineArguments(arguments);
             exit(1);
@@ -131,7 +134,8 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
                 freeCommandLineArguments(arguments);
                 exit(1);
             }
-        } else if (strcmp(argv[i], "-a") == 0) {
+        }
+        else if (strcmp(argv[i], "-a") == 0) {
             if (arguments->bArgumentCount > 0 || arguments->oArgument != NULL) {
                 perror("Error: -a cannot be used with -b or -o\n");
                 freeCommandLineArguments(arguments);
@@ -151,7 +155,8 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
                 arguments->aArguments[j] = strdup(argv[i + 1 + j]);
             }
             i = endA - 1;
-        } else if (strcmp(argv[i], "-o") == 0) {
+        }
+        else if (strcmp(argv[i], "-o") == 0) {
             if (arguments->aArgumentCount > 0) {
                 perror("Error: -o cannot be used with -a\n");
                 freeCommandLineArguments(arguments);
@@ -165,12 +170,14 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
                 }
                 arguments->oArgument = strdup(argv[i + 1]);
                 i += 1;
-            } else {
+            }
+            else {
                 perror("Error: -o requires exactly one argument\n");
                 freeCommandLineArguments(arguments);
                 exit(1);
             }
-        } else {
+        }
+        else {
             fprintf(stderr, "Error: Unexpected argument %s\n", argv[i]);
             freeCommandLineArguments(arguments);
             exit(1);
@@ -193,12 +200,19 @@ void archiveFiles(struct CommandLineArguments* arguments) {
             char buffer[1];
             ssize_t bytesRead;
             int isTextFile = 1;  // Assume it's a text file initially
+            int nonPrintableCount = 0;  // Counter for non-printable ASCII characters
             while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
                 charCount += bytesRead;
                 // Check if the current character is not a printable ASCII character
-                if (buffer[0] < 32 || buffer[0] > 126) {
-                    isTextFile = 0;  // Not a text file
-                    break;
+                if ((buffer[0] < 32 || buffer[0] > 126) || (buffer[0] >= 48 && buffer[0] <= 57)) {
+                    nonPrintableCount++;
+                    // Calculate the tolerance as a percentage of non-printable characters
+                    double tolerancePercentage = (nonPrintableCount * 100.0) / (double)charCount;
+                    // If the tolerance exceeds a certain threshold, consider it not a text file
+                    if (tolerancePercentage > 80.0) {
+                        isTextFile = 0;  // Not a text file
+                        break;
+                    }
                 }
             }
             if (!isTextFile) {
@@ -246,3 +260,4 @@ void archiveFiles(struct CommandLineArguments* arguments) {
     }
     close(outFile);  // Close the output file
 }
+

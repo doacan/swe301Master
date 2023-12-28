@@ -28,6 +28,7 @@ struct CommandLineArguments {
 long getTotalSize(struct CommandLineArguments* arguments);
 void freeCommandLineArguments(struct CommandLineArguments* arguments);
 void handleArguments(int argc, char* argv[], struct CommandLineArguments* arguments);
+void archiveFiles(struct CommandLineArguments* arguments);
 
 
 
@@ -175,4 +176,73 @@ void handleArguments(int argc, char* argv[], struct CommandLineArguments* argume
             exit(1);
         }
     }
+}
+
+void archiveFiles(struct CommandLineArguments* arguments) {
+    const char* outputFileName = (arguments->oArgument != NULL) ? arguments->oArgument : "a.sau";
+    int outFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (outFile == -1) {
+        perror("Error: Unable to create or open output file");
+        exit(1);
+    }
+
+    for (int i = 0; i < arguments->bArgumentCount; ++i) {
+        int file = open(arguments->bArguments[i], O_RDONLY);
+        if (file != -1) {
+            off_t charCount = 0;
+            char buffer[1];
+            ssize_t bytesRead;
+            int isTextFile = 1;  // Assume it's a text file initially
+            while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+                charCount += bytesRead;
+                // Check if the current character is not a printable ASCII character
+                if (buffer[0] < 32 || buffer[0] > 126) {
+                    isTextFile = 0;  // Not a text file
+                    break;
+                }
+            }
+            if (!isTextFile) {
+                fprintf(stderr, "Error: %s input file format is incompatible!\n", arguments->bArguments[i]);
+                close(file);
+                close(outFile);
+                exit(1);
+            }
+            struct stat fileStat;
+            if (fstat(file, &fileStat) == 0) {
+                dprintf(outFile, "|%s,%o,%ld", arguments->bArguments[i], fileStat.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO), charCount);
+            }
+            else {
+                perror("Error: Unable to get file permissions");
+                exit(1);
+            }
+
+            close(file);
+        }
+        else {
+            perror("Error: Unable to open file");
+            exit(1);
+        }
+    }
+
+    dprintf(outFile, "|");
+
+    // Transfer the content of each file into 1 byte per character in 8-bit binary ASCII format and add to the output file
+    for (int i = 0; i < arguments->bArgumentCount; ++i) {
+        int file = open(arguments->bArguments[i], O_RDONLY);
+        if (file != -1) {
+            char buffer[1];
+            while (read(file, buffer, sizeof(buffer)) > 0) {
+                for (int j = 7; j >= 0; --j) {
+                    // Extract each bit of the byte and write it to the output file
+                    int bit = ((buffer[0] >> j) & 1) + '0';
+                    write(outFile, &bit, 1);
+                }
+            }
+            close(file);
+        }
+        else {
+            perror("Error: Unable to open file");
+        }
+    }
+    close(outFile);  // Close the output file
 }

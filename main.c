@@ -29,6 +29,7 @@ long getTotalSize(struct CommandLineArguments* arguments);
 void freeCommandLineArguments(struct CommandLineArguments* arguments);
 void handleArguments(int argc, char* argv[], struct CommandLineArguments* arguments);
 void archiveFiles(struct CommandLineArguments* arguments);
+void openFiles(struct CommandLineArguments* arguments);
 
 int main(int argc, char* argv[]) {
     struct CommandLineArguments arguments;
@@ -301,3 +302,117 @@ void archiveFiles(struct CommandLineArguments* arguments) {
     close(outFile);
 }
 
+
+void openFiles(struct CommandLineArguments* arguments) {
+    // Check if the file extension is ".sau"
+    char* fileExtension = strrchr(arguments->aArguments[0], '.');
+    if (fileExtension == NULL || strcmp(fileExtension, ".sau") != 0) {
+        perror("Archive file is inappropriate or corrupt!\n");
+        freeCommandLineArguments(arguments);
+        exit(1);
+    }
+
+    // Open the file for reading
+    int file = open(arguments->aArguments[0], O_RDONLY);
+    if (file == -1) {
+        perror("Error: Unable to open file");
+        freeCommandLineArguments(arguments);
+        exit(1);
+    }
+
+    // Get the file size
+    struct stat fileStat;
+    if (fstat(file, &fileStat) == -1) {
+        perror("Error: Unable to get file size");
+        freeCommandLineArguments(arguments);
+        close(file);
+        exit(1);
+    }
+
+    size_t bufferSize = fileStat.st_size;
+    char* buffer = (char*)malloc(bufferSize);
+    if (buffer == NULL) {
+        perror("Error: Unable to allocate buffer");
+        freeCommandLineArguments(arguments);
+        close(file);
+        exit(1);
+    }
+
+    ssize_t bytesRead = read(file, buffer, bufferSize);
+    close(file);
+
+    if (bytesRead == -1) {
+        perror("Error: Unable to read file");
+        freeCommandLineArguments(arguments);
+        free(buffer);
+        exit(1);
+    }
+
+    struct stat folderStat;
+    // Check if the destination folder exists, and create it if not
+    if (stat(arguments->aArguments[1], &folderStat) == -1 && mkdir(arguments->aArguments[1], 0777) == -1) {
+        perror("Error: Unable to create folder");
+        freeCommandLineArguments(arguments);
+        free(buffer);
+        exit(1);
+    }
+
+    char* lastPipe = strrchr(buffer, '|');
+    if (lastPipe == NULL) {
+        perror("Archive file is inappropriate or corrupt!");
+        freeCommandLineArguments(arguments);
+        free(buffer);
+        exit(1);
+    }
+
+    // Calculate the index by subtracting the pointer difference
+    size_t lastIndex = lastPipe - buffer;
+    char* pipePosition = strchr(buffer, '|');
+    long index = pipePosition - buffer;
+    size_t offset = lastIndex + 1;
+
+    // Iterate through the archive file to extract file information and write files
+    while ((size_t)index < lastIndex - 1) {
+        struct FileInfo fileInfo;
+        // Parse file information from the buffer
+        sscanf(buffer + index, "|%[^,],%o,%ld|", fileInfo.fileName, &fileInfo.permissions, &fileInfo.size);
+        pipePosition = strchr(pipePosition + 1, '|');
+        index = pipePosition - buffer;
+        char filePath[512];
+        // Create the full path for the file in the destination folder
+        snprintf(filePath, sizeof(filePath), "%s/%s", arguments->aArguments[1], fileInfo.fileName);
+        // Open the file for writing
+        int outFile = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, fileInfo.permissions);
+        if (outFile == -1) {
+            // Print file information and error messages
+            printf("%s,%u,%ld", fileInfo.fileName, fileInfo.permissions, fileInfo.size);
+            perror("Error: Unable to create file");
+            perror("Archive file is inappropriate or corrupt!");
+            // Cleanup and exit
+            freeCommandLineArguments(arguments);
+            exit(1);
+        }
+        size_t dataSize = fileInfo.size * 8;
+        char substring[dataSize];
+        // Copy the binary data from the buffer
+        strncpy(substring, buffer + offset, fileInfo.size * 8);
+        offset += fileInfo.size * 8;
+        // Convert binary ASCII to characters and write to the file
+        for (size_t i = 0; i < dataSize; i += 8) {
+            char binaryChar[9];
+            strncpy(binaryChar, substring + i, 8);
+            binaryChar[8] = '\0';
+            // Convert binary string to integer
+            long asciiValue = strtol(binaryChar, NULL, 2);
+            // Write the ASCII value to the file
+            write(outFile, &asciiValue, 1);
+        }
+        close(outFile);
+        // Print file name and separator based on whether there are more files
+        printf("%s%s", fileInfo.fileName, ((size_t)index < lastIndex - 1) ? ", " : " ");
+    }
+    // Print a message indicating the number of files opened
+    printf("files opened in the %s directory.\n", arguments->aArguments[1]);
+    // Cleanup allocated memory
+    free(buffer);
+}

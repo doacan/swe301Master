@@ -1,4 +1,5 @@
 
+System Programming
 # File Archiver and Extractor
 
 ## Overview
@@ -44,23 +45,10 @@ Compile the program using a C compiler. For example, using `gcc`:
 gcc -o tarsau main.c
 ```
 
-## Examples
 
-### Archiving Files
 
-```bash
-./tarsau -b file1.txt file2.jpg file3.doc -o s1.sau
-```
 
-This command archives `file1.txt`, `file2.jpg`, and `file3.doc` into `s1.sau`.
 
-### Extracting Files
-
-```bash
-./tarsau -a s1.sau d1
-```
-
-This command extracts files from `s1.sau` and saves them in `d1`.
 
 ## Error Handling
 
